@@ -7,20 +7,21 @@ package main
 // Initial goal - scrape a single county game data from the most recent national league fixture.
 
 import (
-	//"fmt"
+	"fmt"
 	//"net/http"
 	//"net/url"
 	//"strings"
+	//"time"
 	"math/rand"
 	//"github.com/PuerkitoBio/goquery"
 )
 
-var domain = map[string]string{
+var playerDataDomain = map[string]string{
 	"base":     "https://www.finalwhistle.ie",
 	"fixtures": "https://www.finalwhistle.ie/gaelic/donegal-fixtures-results",
 }
 
-type searchResult struct {
+type SearchResult struct {
 	ResultURL   string
 	ResultTitle string
 }
@@ -35,6 +36,17 @@ func selectRandomUserAgent() string {
 	return userAgents[rand.Intn(len(userAgents))]
 }
 
-func scrape() (string, error) {
-	return "Scraping...", nil
+func scrape() (string, []SearchResult, error) {
+	results := []SearchResult{}
+
+	fixtureURL, err := buildFixtureUrls()
+	if err != nil {
+		fmt.Printf("Fixture: ", fixtureURL)
+	}
+
+	return fixtureURL, results, nil
+}
+
+func buildFixtureUrls() (string, error) {
+	return playerDataDomain["fixtures"], nil
 }
