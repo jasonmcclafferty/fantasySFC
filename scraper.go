@@ -1,12 +1,40 @@
 package main
 
-// Alias fmt as fmt
-
 // Overall goal: Pull county GAA player data from
 // https://www.finalwhistle.ie/gaelic/
 // and populate the structs in structs.go
 
 // Initial goal - scrape a single county game data from the most recent national league fixture.
-func scrape() {
 
+import (
+	//"fmt"
+	//"net/http"
+	//"net/url"
+	//"strings"
+	"math/rand"
+	//"github.com/PuerkitoBio/goquery"
+)
+
+var domain = map[string]string{
+	"base":     "https://www.finalwhistle.ie",
+	"fixtures": "https://www.finalwhistle.ie/gaelic/donegal-fixtures-results",
+}
+
+type searchResult struct {
+	ResultURL   string
+	ResultTitle string
+}
+
+var userAgents = []string{
+	"Mozilla/5.0 (Windows NT 6.1; WOW64)",
+	"AppleWebKit/537.36 (KHTML, like Gecko)",
+	"Chrome/44.0.2403.157 Safari/537.36",
+}
+
+func selectRandomUserAgent() string {
+	return userAgents[rand.Intn(len(userAgents))]
+}
+
+func scrape() (string, error) {
+	return "Scraping...", nil
 }
