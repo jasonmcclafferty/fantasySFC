@@ -6,6 +6,7 @@ Fantasy Football clone for GAA - written in Go.
 ```
 fantasySFC/
 ├── cmd/                  # Application entrypoints
+│   ├── fantasysfc/       # Main Entrypoint
 │   ├── server/           # Main API server
 │   └── scraper/          # Data collection tool
 ├── internal/             # Private application code

@@ -1,4 +1,4 @@
-package main
+package models
 
 var counties = []string{
 	"Antrim",
