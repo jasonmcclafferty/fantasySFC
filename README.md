@@ -23,7 +23,7 @@ fantasySFC/
 ├── pkg/                  # Public libraries
 │   └── gaastats/         # Reusable GAA statistics
 └── api/                  # API layer
-├── rest/             # REST endpoints
-├── grpc/             # gRPC service
-└── graphql/          # GraphQL resolvers
+    ├── rest/             # REST endpoints
+    ├── grpc/             # gRPC service
+    └── graphql/          # GraphQL resolvers
 ```
