@@ -2,6 +2,8 @@
 Fantasy Football clone for GAA - written in Go.
 
 
+## Project Structure
+```
 fantasySFC/
 ├── cmd/                  # Application entrypoints
 │   ├── server/           # Main API server
@@ -24,3 +26,4 @@ fantasySFC/
 ├── rest/             # REST endpoints
 ├── grpc/             # gRPC service
 └── graphql/          # GraphQL resolvers
+```
