@@ -5,43 +5,20 @@ package scraper
 // and populate the structs in structs.go
 
 // Initial goal - scrape a single county game data from the most recent national league fixture.
-
+// This will involve scraping the fixture data, then scraping the player data from the fixture URL.
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
 
-	//"net/url"
-	//"strings"
-	//"time"
-	"math/rand"
-
 	"github.com/PuerkitoBio/goquery"
-	//"github.com/PuerkitoBio/goquery"
 )
 
 var playerDataDomain = map[string]string{
 	"base":     "https://www.finalwhistle.ie",
 	"fixtures": "https://www.finalwhistle.ie/gaelic/donegal-fixtures-results",
-	"players":  "https://www.finalwhistle.ie/gaelic/donegal-players",
-	"lastGame": "https://www.finalwhistle.ie/gaelic/event/national-football-league/nfl-division-1/donegal-v-derry-3/2025-03-02/",
-}
-
-type SearchResult struct {
-	ResultURL   string
-	ResultTitle string
-}
-
-type Fixture struct {
-	Date        time.Time
-	HomeTeam    string
-	AwayTeam    string
-	Time        string
-	Competition string
-	Venue       string
-	MatchDay    string
-	FixtureURL  string
 }
 
 var userAgents = []string{
@@ -50,127 +27,363 @@ var userAgents = []string{
 	"Chrome/44.0.2403.157 Safari/537.36",
 }
 
+func selectRandomUserAgent() string {
+	return userAgents[rand.Intn(len(userAgents))]
+
+}
+
+// buildFixtureUrls returns the URL to scrape for fixtures
 func buildFixtureUrls() (string, error) {
 	return playerDataDomain["fixtures"], nil
 }
 
-func selectRandomUserAgent() string {
-	return userAgents[rand.Intn(len(userAgents))]
+// SearchResult represents a search result item
+type SearchResult struct {
+	ResultURL   string
+	ResultTitle string
 }
 
-func Scrape() (string, []SearchResult, error) {
-	results := []SearchResult{}
-	fixtures := []Fixture{}
+// Fixture represents a GAA match fixture
+type Fixture struct {
+	MatchTitle string
+	MatchURL   string
+}
 
-	fixtureURL, err := buildFixtureUrls()
-	if err != nil {
-		fmt.Printf("Fixture: %v", fixtureURL)
-	}
+// Result represents a GAA match result
+type Result struct {
+	MatchTitle  string
+	MatchURL    string
+	HomeScore   string
+	AwayScore   string
+	HomeTeam    string
+	AwayTeam    string
+	CompletedAt string
+}
 
+// MatchData combines both fixture and result information
+type MatchData struct {
+	Fixture Fixture
+	Result  Result
+}
+
+// scrapeFixture parses a fixture element from the finalwhistle.ie website
+func scrapeFixture(fixtureURL string) ([]Fixture, error) {
 	// Create HTTP client with timeout
 	client := &http.Client{
 		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  true,
-			TLSHandshakeTimeout: 10 * time.Second,
-		},
 	}
 
+	// Create and customize request
 	req, err := http.NewRequest("GET", fixtureURL, nil)
 	if err != nil {
-		return "", nil, fmt.Errorf("Failed to create request: %w", err)
+		return nil, fmt.Errorf("error creating request: %v", err)
 	}
 
-	// set headers to mimic browser
+	// Set a user agent to mimic a browser
 	req.Header.Set("User-Agent", selectRandomUserAgent())
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
-	req.Header.Set("Connection", "keep-alive")
-	req.Header.Set("Upgrade-Insecure-Requests", "1")
-	req.Header.Set("Cache-Control", "max-age=0")
 
+	// Make the HTTP request
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", nil, fmt.Errorf("Failed to execute request: %w", err)
+		return nil, fmt.Errorf("error making request: %v", err)
 	}
-
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return "", nil, fmt.Errorf("received non-200 response status: %d %s", resp.StatusCode, resp.Status)
+	// Check response status
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("received non-200 response: %d", resp.StatusCode)
 	}
 
-	// PArse HTML usnig GoQuery
+	// Parse HTML document
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		return "", nil, fmt.Errorf("Failed to parse HTML: %w", err)
+		return nil, fmt.Errorf("error parsing HTML: %v", err)
 	}
 
-	// Print the page title for debugging
-	fmt.Println("Page title:", doc.Find("title").Text())
+	fixtures := []Fixture{}
 
-	// Find the fixtures table
-	fixturesTable := doc.Find("table.sp-event-list")
-	fmt.Printf("Found %d fixtures tables\n", fixturesTable.Length())
+	// Find all fixture elements (table cells)
+	doc.Find("td").Each(func(i int, s *goquery.Selection) {
+		// Look for the match title element which contains the fixture link we want
+		titleElement := s.Find(".sp-event-title")
+		if titleElement.Length() > 0 {
+			fixture := Fixture{}
 
-	// Extract fixtures from the table
-	fixturesTable.Find("tbody tr").Each(func(i int, row *goquery.Selection) {
-		// Create a new fixture
-		fixture := Fixture{}
+			// Extract the match title and URL from the title element
+			titleLink := titleElement.Find("a")
+			fixture.MatchTitle = titleLink.Text()
+			fixture.MatchURL = titleLink.AttrOr("href", "")
 
-		// Extract date
-		dateText := row.Find("td.data-date a").Text()
-		dateStr := strings.TrimSpace(row.Find("td.data-date date").Text())
-		if dateStr == "" {
-			// If the date element isn't found directly, try to parse it from the text
-			dateStr = strings.TrimSpace(dateText)
-			// You might need to convert the date format
+			// Only add this fixture if we found a valid URL that contains finalwhistle.ie
+			if fixture.MatchURL != "" && strings.Contains(fixture.MatchURL, "finalwhistle.ie") {
+				fixtures = append(fixtures, fixture)
+			}
 		}
-
-		// Parse the date string to time.Time
-		// The format depends on the actual date string format
-		// Example format: "2025-03-23 15:45:00"
-		parsedDate, err := time.Parse("2006-01-02 15:04:05", dateStr)
-		if err != nil {
-			fmt.Printf("Error parsing date '%s': %v\n", dateStr, err)
-		} else {
-			fixture.Date = parsedDate
-		}
-
-		// Extract home team
-		fixture.HomeTeam = strings.TrimSpace(row.Find("td.data-home a").Text())
-
-		// Extract time/results
-		fixture.Time = strings.TrimSpace(row.Find("td.data-time a").Text())
-
-		// Extract away team
-		fixture.AwayTeam = strings.TrimSpace(row.Find("td.data-away a").Text())
-
-		// Extract competition
-		fixture.Competition = strings.TrimSpace(row.Find("td.data-league a").Text())
-
-		// Extract venue
-		fixture.Venue = strings.TrimSpace(row.Find("td.data-venue a").Text())
-
-		// Extract match day
-		fixture.MatchDay = strings.TrimSpace(row.Find("td.data-day").Text())
-
-		// Extract fixture URL
-		fixture.FixtureURL, _ = row.Find("td.data-date a").Attr("href")
-
-		// Clean up the texts to remove any extra whitespace and logos
-		fixture.HomeTeam = cleanTeamName(fixture.HomeTeam)
-		fixture.AwayTeam = cleanTeamName(fixture.AwayTeam)
-
-		fixtures = append(fixtures, fixture)
-
-		fmt.Printf("Extracted fixture: %s vs %s on %s at %s\n",
-			fixture.HomeTeam, fixture.AwayTeam, fixture.Date.Format("2006-01-02"), fixture.Venue)
 	})
 
-	return fixtureURL, results, nil
+	return fixtures, nil
+}
+
+// scrapeResults parses match results from the finalwhistle.ie website
+func scrapeResults(resultsURL string) ([]Result, error) {
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+
+	// Create and customize request
+	req, err := http.NewRequest("GET", resultsURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %v", err)
+	}
+
+	// Set a user agent to mimic a browser
+	req.Header.Set("User-Agent", selectRandomUserAgent())
+
+	// Make the HTTP request
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response status
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("received non-200 response: %d", resp.StatusCode)
+	}
+
+	// Parse HTML document
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing HTML: %v", err)
+	}
+
+	results := []Result{}
+
+	// Find all result elements (table cells)
+	doc.Find("td").Each(func(i int, s *goquery.Selection) {
+		// Look for cells that have both match title and results
+		titleElement := s.Find(".sp-event-title")
+		resultsElement := s.Find(".sp-event-results")
+
+		if titleElement.Length() > 0 && resultsElement.Length() > 0 {
+			result := Result{}
+
+			// Extract the match title and URL from the title element
+			titleLink := titleElement.Find("a")
+			result.MatchTitle = titleLink.Text()
+			result.MatchURL = titleLink.AttrOr("href", "")
+
+			// Try to parse the title to get team names
+			if matchParts := strings.Split(result.MatchTitle, " v "); len(matchParts) == 2 {
+				result.HomeTeam = strings.TrimSpace(matchParts[0])
+				result.AwayTeam = strings.TrimSpace(matchParts[1])
+			}
+
+			// Extract scores from the results element
+			resultsLink := resultsElement.Find("a")
+			scoreElements := resultsLink.Find(".sp-result")
+
+			if scoreElements.Length() >= 2 {
+				result.HomeScore = strings.TrimSpace(scoreElements.First().Text())
+				result.AwayScore = strings.TrimSpace(scoreElements.Eq(1).Text())
+			}
+
+			// Extract completion date
+			dateElement := s.Find("time.sp-event-date")
+			if dateElement.Length() > 0 {
+				result.CompletedAt = dateElement.Text()
+			}
+
+			// Only add results with valid scores and URLs
+			if result.MatchURL != "" &&
+				strings.Contains(result.MatchURL, "finalwhistle.ie") &&
+				result.HomeScore != "" &&
+				result.AwayScore != "" {
+				results = append(results, result)
+			}
+		}
+	})
+
+	return results, nil
+}
+
+// scrapeMatchData combines fixture and result scraping into one function
+func scrapeMatchData(url string) ([]MatchData, error) {
+	fixtures, err := scrapeFixture(url)
+	if err != nil {
+		return nil, fmt.Errorf("error scraping fixtures: %v", err)
+	}
+
+	results, err := scrapeResults(url)
+	if err != nil {
+		return nil, fmt.Errorf("error scraping results: %v", err)
+	}
+
+	// Create a map of result URLs for quick lookup
+	resultMap := make(map[string]Result)
+	for _, result := range results {
+		resultMap[result.MatchURL] = result
+	}
+
+	// Combine fixtures with their corresponding results
+	matchData := []MatchData{}
+	for _, fixture := range fixtures {
+		data := MatchData{
+			Fixture: fixture,
+		}
+
+		// If we have result data for this fixture, add it
+		if result, exists := resultMap[fixture.MatchURL]; exists {
+			data.Result = result
+		}
+
+		matchData = append(matchData, data)
+	}
+
+	return matchData, nil
+}
+
+// extractFixtureDetailsFromHTML parses the fixture details from an HTML string
+func extractFixtureDetailsFromHTML(htmlContent string) (Fixture, error) {
+	fixture := Fixture{}
+
+	// Create a goquery document from the HTML string
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlContent))
+	if err != nil {
+		return fixture, fmt.Errorf("error parsing HTML string: %v", err)
+	}
+
+	// Find the match title link - this is the main link we're interested in
+	titleElement := doc.Find(".sp-event-title")
+	if titleElement.Length() == 0 {
+		return fixture, fmt.Errorf("couldn't find fixture title element")
+	}
+
+	titleLink := titleElement.Find("a")
+	fixture.MatchTitle = titleLink.Text()
+	fixture.MatchURL = titleLink.AttrOr("href", "")
+
+	if fixture.MatchURL == "" {
+		return fixture, fmt.Errorf("couldn't find fixture URL")
+	}
+
+	return fixture, nil
+}
+
+// extractResultDetailsFromHTML parses the match result details from an HTML string
+func extractResultDetailsFromHTML(htmlContent string) (Result, error) {
+	result := Result{}
+
+	// Create a goquery document from the HTML string
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlContent))
+	if err != nil {
+		return result, fmt.Errorf("error parsing HTML string: %v", err)
+	}
+
+	// Find the match title element
+	titleElement := doc.Find(".sp-event-title")
+	if titleElement.Length() == 0 {
+		return result, fmt.Errorf("couldn't find match title element")
+	}
+
+	// Extract the match title and URL
+	titleLink := titleElement.Find("a")
+	result.MatchTitle = titleLink.Text()
+	result.MatchURL = titleLink.AttrOr("href", "")
+
+	// Try to parse the title to get team names
+	if matchParts := strings.Split(result.MatchTitle, " v "); len(matchParts) == 2 {
+		result.HomeTeam = strings.TrimSpace(matchParts[0])
+		result.AwayTeam = strings.TrimSpace(matchParts[1])
+	}
+
+	// Find and extract the scores
+	resultsElement := doc.Find(".sp-event-results")
+	if resultsElement.Length() == 0 {
+		return result, fmt.Errorf("couldn't find results element")
+	}
+
+	resultsLink := resultsElement.Find("a")
+	scoreElements := resultsLink.Find(".sp-result")
+
+	if scoreElements.Length() >= 2 {
+		result.HomeScore = strings.TrimSpace(scoreElements.First().Text())
+		result.AwayScore = strings.TrimSpace(scoreElements.Eq(1).Text())
+	} else {
+		return result, fmt.Errorf("couldn't find score elements")
+	}
+
+	// Extract completion date
+	dateElement := doc.Find("time.sp-event-date")
+	if dateElement.Length() > 0 {
+		result.CompletedAt = dateElement.Text()
+	}
+
+	if result.MatchURL == "" {
+		return result, fmt.Errorf("couldn't find match URL")
+	}
+
+	return result, nil
+}
+
+// extractMatchDataFromHTMLSnippet is a utility function to parse a single HTML snippet
+// and extract both fixture and result information
+func extractMatchDataFromHTMLSnippet(htmlSnippet string) (MatchData, error) {
+	matchData := MatchData{}
+
+	// Extract fixture information
+	fixture, err := extractFixtureDetailsFromHTML(htmlSnippet)
+	if err != nil {
+		return matchData, fmt.Errorf("error extracting fixture: %v", err)
+	}
+	matchData.Fixture = fixture
+
+	// Extract result information
+	result, err := extractResultDetailsFromHTML(htmlSnippet)
+	if err != nil {
+		// Not treating this as a fatal error - we might have a fixture without results
+		fmt.Printf("Note: couldn't extract result: %v\n", err)
+	} else {
+		matchData.Result = result
+	}
+
+	return matchData, nil
+}
+
+// Update the existing scrape function to use our new match data processing
+func scrape() (string, []SearchResult, error) {
+	searchResults := []SearchResult{}
+
+	url, err := buildFixtureUrls() // Reusing this function as it returns the URL we need
+	if err != nil {
+		return url, searchResults, fmt.Errorf("error building URL: %v", err)
+	}
+
+	matchData, err := scrapeMatchData(url)
+	if err != nil {
+		return url, searchResults, fmt.Errorf("error scraping match data: %v", err)
+	}
+
+	// Convert match data to search results for compatibility with existing code
+	for _, data := range matchData {
+		// Create result text if available
+		resultText := ""
+		if data.Result.HomeScore != "" && data.Result.AwayScore != "" {
+			resultText = fmt.Sprintf(" (%s %s - %s %s)",
+				data.Result.HomeTeam,
+				data.Result.HomeScore,
+				data.Result.AwayTeam,
+				data.Result.AwayScore)
+		}
+
+		searchResults = append(searchResults, SearchResult{
+			ResultURL:   data.Fixture.MatchURL,
+			ResultTitle: data.Fixture.MatchTitle + resultText,
+		})
+	}
+
+	return url, searchResults, nil
 }
 
 // cleanTeamName removes the logo and extra whitespace from a team name
