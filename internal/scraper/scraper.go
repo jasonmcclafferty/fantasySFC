@@ -24,6 +24,8 @@ import (
 var playerDataDomain = map[string]string{
 	"base":     "https://www.finalwhistle.ie",
 	"fixtures": "https://www.finalwhistle.ie/gaelic/donegal-fixtures-results",
+	"players":  "https://www.finalwhistle.ie/gaelic/donegal-players",
+	"lastGame": "https://www.finalwhistle.ie/gaelic/event/national-football-league/nfl-division-1/donegal-v-derry-3/2025-03-02/",
 }
 
 type SearchResult struct {
@@ -173,7 +175,7 @@ func Scrape() (string, []SearchResult, error) {
 
 // cleanTeamName removes the logo and extra whitespace from a team name
 func cleanTeamName(name string) string {
-	// Remove any text between <span> and </span> tags (simplified approach)
+	// Remove any text between <span> and </span> tags
 	cleaned := strings.Split(name, "<span")[0]
 
 	// Trim any remaining whitespace
