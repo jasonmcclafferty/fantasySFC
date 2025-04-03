@@ -352,7 +352,7 @@ func extractMatchDataFromHTMLSnippet(htmlSnippet string) (MatchData, error) {
 }
 
 // Update the existing scrape function to use our new match data processing
-func scrape() (string, []SearchResult, error) {
+	func Scrape() (string, []SearchResult, error) {
 	searchResults := []SearchResult{}
 
 	url, err := buildFixtureUrls() // Reusing this function as it returns the URL we need
